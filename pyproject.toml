@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "issue-deck"
+version = "0.2.0"
+description = "PyQt6 tool to pull, filter and export Jira issues into LLM-ingestion-friendly formats (Markdown + JSONL + CSV)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "phertfelder" }]
+keywords = ["jira", "atlassian", "export", "markdown", "jsonl", "llm", "pyqt6"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Bug Tracking",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "PyQt6",
+    "requests",
+]
+
+[project.urls]
+Homepage = "https://github.com/phertfelder/issue-deck"
+Repository = "https://github.com/phertfelder/issue-deck"
+Issues = "https://github.com/phertfelder/issue-deck/issues"
+
+[project.optional-dependencies]
+# OS keychain token storage (falls back to a chmod-600 plaintext file when absent).
+keyring = ["keyring"]
+dev = [
+    "pytest",
+    "ruff",
+    "requests-mock",
+    # mypy is advisory (non-gating) in CI — see [tool.mypy] note below.
+    "mypy",
+]
+
+[project.scripts]
+issue-deck = "issue_deck.__main__:main"
+issuedeck = "issue_deck.__main__:main"
+
+[tool.setuptools]
+# Explicit package list (disables flat-layout auto-discovery, which would
+# otherwise complain about the top-level issue-deck.py compatibility shim).
+packages = [
+    "issue-deck",
+    "issue-deck.exporters",
+    "issue-deck.ui",
+    "issue-deck.services",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["issue-deck/tests"]
+# importlib mode so identically-named test files can live in one tree cleanly.
+addopts = "-ra --import-mode=importlib"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.mypy]
+# PyQt6 ships without type stubs; keep mypy lenient and advisory (non-gating in
+# CI) while typing is progressively tightened.
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = false
