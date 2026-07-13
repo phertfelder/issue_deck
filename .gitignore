@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Test / coverage
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Packaging — ignore generated specs, but keep the committed build spec.
+# build/ and dist/ (the generated binaries) are ignored above and never committed.
+*.spec
+!packaging/issue-deck.spec
+
+# Local exports produced by the app
+jira_export.md
+jira_export.jsonl
+jira_export.csv
+
+# Design reference bundle (prototypes/spec — not part of the shipped source)
+docs/design/
+
+# OS / editor
+.DS_Store
+*.swp
+*~
+
+# JetBrains IDEs
+.idea/
+*.iml
+/.claude/

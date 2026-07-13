@@ -1,0 +1,238 @@
+"""IssueDeck — pull assigned Jira tickets and export them for LLM ingestion.
+
+The public, UI-free API is re-exported here for convenience. The UI layer
+(:mod:`issue_deck.ui`) and :func:`issue_deck.app.main` are intentionally NOT
+imported at package load so that importing ``issue_deck`` does not pull in
+PyQt6.
+"""
+
+from __future__ import annotations
+
+from . import constants
+from .adf import adf_to_text, body_to_text
+from .cancellation import CancelledError, CancelToken
+from .comments import (
+    CommentsMode,
+    CommentsOptions,
+    attach_comments,
+    build_comments,
+    latest_comment_dt,
+    parse_comment_dt,
+    trim_comments,
+)
+from .config import AppConfig, Config
+from .constants import APP_DIR, CONFIG_PATH
+from .csv_import import (
+    CANONICAL_FIELDS,
+    ColumnProfile,
+    ColumnType,
+    FilterRecommendation,
+    ImportOptions,
+    ImportPreview,
+    ImportResult,
+    ParsedCsv,
+    auto_detect_mappings,
+    build_preview,
+    build_profile,
+    commit_import,
+    infer_column_type,
+    parse_csv,
+    profile_columns,
+    read_csv_file,
+    recommend_filters,
+    to_normalized_issues,
+)
+from .datasource import (
+    CsvDataSource,
+    DataSource,
+    DataSourceInfo,
+    DataSourceKind,
+    JiraApiDataSource,
+)
+from .exporters import (
+    export_csv,
+    export_jsonl,
+    export_markdown_combined,
+    export_markdown_per_ticket,
+    issue_to_markdown,
+    run_export,
+)
+from .filtering import apply_filters, matches
+from .jira_client import (
+    AuthError,
+    DeploymentMismatchError,
+    InvalidJQLError,
+    JiraClient,
+    JiraError,
+    JiraPermissionError,
+    NetworkError,
+    NetworkTimeoutError,
+    RateLimitedError,
+    RetryPolicy,
+    SearchOutcome,
+    ServerError,
+    SSLCertError,
+    make_client,
+)
+from .jql import build_jql
+from .markers import days_since_update, is_high_priority, is_stale, issue_markers
+from .merge import (
+    ConflictRule,
+    DeltaPreview,
+    FieldChange,
+    MergeResult,
+    build_delta,
+    is_resolved,
+    merge_collections,
+)
+from .models import (
+    DEFAULT_VISIBLE_COLUMNS,
+    RESULT_COLUMNS,
+    ExportOptions,
+    FieldFilter,
+    JiraComment,
+    JiraField,
+    JiraIssue,
+    SavedView,
+    SearchFilters,
+)
+from .normalization import normalize_issue
+from .progress import FetchProgress, Phase, RetryEvent
+from .query import (
+    QueryEstimate,
+    breadth_warnings,
+    default_filters,
+    estimate_query,
+)
+from .schema import (
+    CsvImportProfile,
+    ExportManifest,
+    FieldMapping,
+    IssueCollection,
+    JiraDeployment,
+    JiraFieldDefinition,
+    JiraUser,
+    NormalizedIssue,
+    SourceMetadata,
+    normalized_from_jira,
+)
+from .store import (
+    ImportSession,
+    InMemoryIssueStore,
+    SavedProfile,
+    SessionKind,
+)
+from .views import SavedViewStore, view_from_dict, view_to_dict
+
+__version__ = constants.APP_VERSION
+
+__all__ = [
+    "constants",
+    "APP_DIR",
+    "CONFIG_PATH",
+    "AppConfig",
+    "Config",
+    "JiraIssue",
+    "JiraComment",
+    "JiraField",
+    "SearchFilters",
+    "ExportOptions",
+    "JiraDeployment",
+    "JiraUser",
+    "JiraFieldDefinition",
+    "FieldMapping",
+    "SourceMetadata",
+    "NormalizedIssue",
+    "IssueCollection",
+    "CsvImportProfile",
+    "ExportManifest",
+    "ColumnType",
+    "ColumnProfile",
+    "FilterRecommendation",
+    "ParsedCsv",
+    "ImportOptions",
+    "ImportPreview",
+    "ImportResult",
+    "CANONICAL_FIELDS",
+    "parse_csv",
+    "read_csv_file",
+    "auto_detect_mappings",
+    "build_profile",
+    "infer_column_type",
+    "profile_columns",
+    "recommend_filters",
+    "to_normalized_issues",
+    "build_preview",
+    "commit_import",
+    "DataSource",
+    "DataSourceKind",
+    "DataSourceInfo",
+    "JiraApiDataSource",
+    "CsvDataSource",
+    "InMemoryIssueStore",
+    "ImportSession",
+    "SessionKind",
+    "SavedProfile",
+    "ConflictRule",
+    "MergeResult",
+    "merge_collections",
+    "FieldChange",
+    "DeltaPreview",
+    "build_delta",
+    "is_resolved",
+    "apply_filters",
+    "matches",
+    "FieldFilter",
+    "SavedView",
+    "RESULT_COLUMNS",
+    "DEFAULT_VISIBLE_COLUMNS",
+    "default_filters",
+    "breadth_warnings",
+    "estimate_query",
+    "QueryEstimate",
+    "is_stale",
+    "is_high_priority",
+    "days_since_update",
+    "issue_markers",
+    "SavedViewStore",
+    "view_to_dict",
+    "view_from_dict",
+    "adf_to_text",
+    "body_to_text",
+    "normalize_issue",
+    "normalized_from_jira",
+    "attach_comments",
+    "build_comments",
+    "latest_comment_dt",
+    "parse_comment_dt",
+    "trim_comments",
+    "CommentsMode",
+    "CommentsOptions",
+    "CancelToken",
+    "CancelledError",
+    "Phase",
+    "FetchProgress",
+    "RetryEvent",
+    "build_jql",
+    "JiraClient",
+    "JiraError",
+    "AuthError",
+    "JiraPermissionError",
+    "InvalidJQLError",
+    "RateLimitedError",
+    "ServerError",
+    "NetworkTimeoutError",
+    "NetworkError",
+    "SSLCertError",
+    "DeploymentMismatchError",
+    "RetryPolicy",
+    "SearchOutcome",
+    "make_client",
+    "issue_to_markdown",
+    "export_markdown_combined",
+    "export_markdown_per_ticket",
+    "export_jsonl",
+    "export_csv",
+    "run_export",
+    "__version__",
+]
