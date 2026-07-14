@@ -1,0 +1,31 @@
+{
+  "key": "CLOUD-1",
+  "fields": {
+    "summary": "Payment reconciliation fails for café orders",
+    "status": { "name": "In Progress" },
+    "issuetype": { "name": "Bug" },
+    "priority": { "name": "High" },
+    "assignee": { "displayName": "Ada Lovelace" },
+    "reporter": { "displayName": "Grace Hopper" },
+    "created": "2026-01-01T10:00:00.000+0000",
+    "updated": "2026-02-01T12:30:00.000+0000",
+    "components": [{ "name": "Backend" }, { "name": "API" }],
+    "labels": ["urgent", "settlement"],
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            { "type": "text", "text": "The reconciliation job " },
+            { "type": "text", "text": "crashes", "marks": [{ "type": "strong" }] },
+            { "type": "text", "text": " on non-ASCII names." }
+          ]
+        }
+      ]
+    },
+    "customfield_10050": { "value": "Acme Corp" },
+    "customfield_10060": { "value": "S1" }
+  }
+}

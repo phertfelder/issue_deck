@@ -1,0 +1,52 @@
+{
+  "key": "RICH-7",
+  "fields": {
+    "summary": "Checkout latency spike under load",
+    "status": {
+      "name": "In Progress",
+      "statusCategory": { "key": "indeterminate", "name": "In Progress" }
+    },
+    "issuetype": { "name": "Story" },
+    "priority": { "name": "High" },
+    "assignee": {
+      "displayName": "Ada Lovelace",
+      "accountId": "acc-123",
+      "emailAddress": "ada@example.com"
+    },
+    "reporter": { "displayName": "Grace Hopper", "accountId": "acc-456" },
+    "created": "2026-04-01T08:00:00.000+0000",
+    "updated": "2026-04-10T16:45:00.000+0000",
+    "resolutiondate": "2026-04-12T09:15:00.000+0000",
+    "duedate": "2026-04-20",
+    "labels": ["performance", "checkout"],
+    "components": [{ "name": "Frontend" }, { "name": "Gateway" }],
+    "project": { "key": "RICH", "name": "Rich Commerce" },
+    "parent": { "key": "RICH-1", "fields": { "summary": "Q2 Performance Epic" } },
+    "fixVersions": [{ "name": "2026.4.0" }, { "name": "2026.4.1" }],
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            { "type": "text", "text": "Latency " },
+            { "type": "text", "text": "doubles", "marks": [{ "type": "strong" }] },
+            { "type": "text", "text": " at peak." }
+          ]
+        }
+      ]
+    },
+    "customfield_10050": { "value": "Acme Corp" },
+    "customfield_10060": { "value": "S1" },
+    "customfield_10016": 8,
+    "customfield_10020": [
+      "com.atlassian.greenhopper.service.sprint.Sprint@1a[id=42,name=Sprint 12,state=ACTIVE]",
+      { "name": "Sprint 13", "state": "future" }
+    ],
+    "customfield_10099": [
+      { "value": "Web" },
+      { "value": "Mobile" }
+    ]
+  }
+}
