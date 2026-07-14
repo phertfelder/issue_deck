@@ -53,14 +53,14 @@ issuedeck = "issue_deck.__main__:main"
 # Explicit package list (disables flat-layout auto-discovery, which would
 # otherwise complain about the top-level issue-deck.py compatibility shim).
 packages = [
-    "issue-deck",
-    "issue-deck.exporters",
-    "issue-deck.ui",
-    "issue-deck.services",
+    "issue_deck",
+    "issue_deck.exporters",
+    "issue_deck.ui",
+    "issue_deck.services",
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["issue-deck/tests"]
+testpaths = ["issue_deck/tests"]
 # importlib mode so identically-named test files can live in one tree cleanly.
 addopts = "-ra --import-mode=importlib"
 
