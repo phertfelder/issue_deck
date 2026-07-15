@@ -66,6 +66,13 @@ class Tokens:
     amber: str
     amber_bg: str
     risk: str
+    # ---- results-table tokens (readable dark/light row hierarchy) ----
+    table_sel: str            # selected row background (focused)
+    table_sel_unfocused: str  # selected row background when the table isn't focused
+    table_sel_text: str       # foreground for any cell in the selected row
+    table_hover: str          # hovered row background
+    table_blocked: str        # blocked-row left-edge marker
+    table_stale: str          # stale-row left-edge marker
 
 
 # Dark is the default surface set. Warm neutrals — never pure Qt grey.
@@ -88,6 +95,12 @@ DARK = Tokens(
     amber="#e6a94b",
     amber_bg="rgba(230,169,75,0.13)",
     risk="#e5794c",
+    table_sel="#2f6feb",
+    table_sel_unfocused="#33415e",
+    table_sel_text="#ffffff",
+    table_hover="#2b271d",
+    table_blocked="#e0574f",
+    table_stale="#8a8172",
 )
 
 # Light parity (not wired to a toggle in PR 1, but kept so theme.py is complete).
@@ -110,9 +123,26 @@ LIGHT = Tokens(
     amber="#a5701a",
     amber_bg="rgba(216,158,54,0.17)",
     risk="#c0562b",
+    table_sel="#2f6feb",
+    table_sel_unfocused="#cdd8f0",
+    table_sel_text="#ffffff",
+    table_hover="#efeae0",
+    table_blocked="#c0392b",
+    table_stale="#9a8f7c",
 )
 
 THEMES = {"dark": DARK, "light": LIGHT}
+
+# The tokens most recently installed by ``apply_theme``. Widgets that paint their
+# own cells (the results-table delegate) read this so a runtime theme switch is
+# reflected without them holding a stale copy. Defaults to the dark set so a
+# table built before any explicit ``apply_theme`` call still colours sensibly.
+_ACTIVE_TOKENS: Tokens = DARK
+
+
+def active_tokens() -> Tokens:
+    """The tokens for the theme currently installed on the application."""
+    return _ACTIVE_TOKENS
 
 # Chrome uses the system stack; keys/JQL/dates use a monospace stack. No CDN
 # fonts — system faces only (Segoe UI / Consolas on Windows).
@@ -243,19 +273,73 @@ QSplitter::handle {{
 QTableWidget, QTableView {{
     background-color: {t.content};
     alternate-background-color: {t.card};
-    gridline-color: {t.border};
+    gridline-color: {t.border_strong};
     border: 1px solid {t.border};
     border-radius: 8px;
-    selection-background-color: {t.accent_bg};
-    selection-color: {t.text};
+    /* Solid, high-contrast selection so a picked row is unmistakable. The
+       results table paints its own selection via a delegate; these keep every
+       other QTableWidget (pinned fields, dialogs) readable too. */
+    selection-background-color: {t.table_sel};
+    selection-color: {t.table_sel_text};
+}}
+QTableView::item {{
+    padding: 3px 6px;
 }}
 QHeaderView::section {{
     background-color: {t.card};
-    color: {t.text_secondary};
+    color: {t.text};
     border: none;
     border-bottom: 1px solid {t.border_strong};
     padding: 6px 8px;
     font-weight: 600;
+}}
+QHeaderView::section:hover {{
+    color: {t.accent};
+}}
+QTableCornerButton::section {{
+    background-color: {t.card};
+    border: none;
+}}
+/* Sort indicator kept visible against the warm header. */
+QHeaderView::down-arrow, QHeaderView::up-arrow {{
+    width: 9px;
+    height: 9px;
+    margin-right: 4px;
+}}
+
+/* ---- scrollbars (visible against the dark surface) ---- */
+QScrollBar:vertical {{
+    background: transparent;
+    width: 12px;
+    margin: 0;
+}}
+QScrollBar::handle:vertical {{
+    background-color: {t.border_strong};
+    border-radius: 6px;
+    min-height: 28px;
+}}
+QScrollBar::handle:vertical:hover {{
+    background-color: {t.text_muted};
+}}
+QScrollBar:horizontal {{
+    background: transparent;
+    height: 12px;
+    margin: 0;
+}}
+QScrollBar::handle:horizontal {{
+    background-color: {t.border_strong};
+    border-radius: 6px;
+    min-width: 28px;
+}}
+QScrollBar::handle:horizontal:hover {{
+    background-color: {t.text_muted};
+}}
+QScrollBar::add-line, QScrollBar::sub-line {{
+    width: 0;
+    height: 0;
+}}
+QScrollBar::add-page, QScrollBar::sub-page {{
+    background: transparent;
 }}
 
 /* ---- inner tab widgets (csv wizard, dialogs) ---- */
@@ -504,8 +588,10 @@ def apply_theme(app, mode: str = "dark") -> str:
     Fusion base style + a token-derived palette (so containers inherit the warm
     base) + the QSS layer on top. Unknown modes fall back to dark.
     """
+    global _ACTIVE_TOKENS
     tokens = THEMES.get(mode, DARK)
     resolved = mode if mode in THEMES else "dark"
+    _ACTIVE_TOKENS = tokens
     app.setStyle("Fusion")
     app.setPalette(build_palette(tokens))
     app.setStyleSheet(build_qss(tokens))

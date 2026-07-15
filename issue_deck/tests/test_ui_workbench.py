@@ -8,7 +8,7 @@ never touch the real config.
 from __future__ import annotations
 
 import pytest
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QInputDialog, QMessageBox
 
 from issue_deck import constants
@@ -22,7 +22,12 @@ from issue_deck.schema import (
 )
 from issue_deck.ui.detail_panel import IssueDetailPanel
 from issue_deck.ui.query_tab import QueryTab
-from issue_deck.ui.results_table import _HIGH_BRUSH, ResultsTable
+from issue_deck.ui.results_table import (
+    _MARK_BLOCKED,
+    _MARK_HIGH,
+    _MARKER_ROLE,
+    ResultsTable,
+)
 
 
 @pytest.fixture(scope="module")
@@ -78,10 +83,22 @@ def test_table_quick_filter_hides_rows(qapp):
 def test_table_high_priority_marker(qapp):
     t = ResultsTable()
     t.populate([_issue("A", priority="High"), _issue("B", priority="Low")])
-    # Row 0 (high) is tinted; row 1 is not.
-    assert t.item(0, 0).background().color() == QColor(255, 235, 235)
-    assert t.item(0, 0).background() == _HIGH_BRUSH
-    assert t.item(1, 0).background().color() != QColor(255, 235, 235)
+    # Row 0 (high) carries a left-edge marker flag; row 1 does not. The marker
+    # is a narrow bar drawn by the delegate — it must NOT repaint the whole row
+    # background (the old full-row tint that killed contrast in dark mode).
+    assert t.item(0, 0).data(_MARKER_ROLE) == _MARK_HIGH
+    assert not t.item(1, 0).data(_MARKER_ROLE)
+    # No per-cell background brush is set on any row (no full-row fill).
+    assert t.item(0, 0).background().style() == Qt.BrushStyle.NoBrush
+    assert t.item(1, 0).background().style() == Qt.BrushStyle.NoBrush
+
+
+def test_table_blocked_marker(qapp):
+    t = ResultsTable()
+    t.populate([_issue("A", status="Blocked")])
+    # Blocked outranks priority/staleness for the single left-edge marker.
+    assert t.item(0, 0).data(_MARKER_ROLE) == _MARK_BLOCKED
+    assert t.item(0, 0).background().style() == Qt.BrushStyle.NoBrush  # no fill
 
 
 def test_table_stale_marker_tooltip(qapp):
