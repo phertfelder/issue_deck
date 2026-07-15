@@ -2,7 +2,7 @@
 
 Never touches the real per-user directory: home is redirected to ``tmp_path``,
 ``sys.platform`` and the relevant env vars are monkeypatched, and the session's
-``JIRA_PULLER_HOME`` override is removed per-test so native resolution is tested.
+``ISSUE_DECK_HOME`` override is removed per-test so native resolution is tested.
 """
 
 from __future__ import annotations
@@ -16,9 +16,10 @@ from issue_deck import paths
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
-    """Redirect Path.home() and drop the session JIRA_PULLER_HOME override."""
+    """Redirect Path.home() and drop the session home overrides."""
     monkeypatch.setattr(paths, "_home", lambda: tmp_path)
     monkeypatch.delenv(paths.HOME_ENV_VAR, raising=False)
+    monkeypatch.delenv(paths.LEGACY_HOME_ENV_VAR, raising=False)
     return tmp_path
 
 
@@ -28,19 +29,19 @@ def home(tmp_path, monkeypatch):
 def test_windows_native_path_uses_appdata(home, monkeypatch):
     monkeypatch.setattr(paths.sys, "platform", "win32")
     monkeypatch.setenv("APPDATA", str(home / "Roaming"))
-    assert paths.resolve_app_dir() == home / "Roaming" / "JiraPuller"
+    assert paths.resolve_app_dir() == home / "Roaming" / "IssueDeck"
 
 
 def test_windows_native_path_falls_back_without_appdata(home, monkeypatch):
     monkeypatch.setattr(paths.sys, "platform", "win32")
     monkeypatch.delenv("APPDATA", raising=False)
-    assert paths.resolve_app_dir() == home / "AppData" / "Roaming" / "JiraPuller"
+    assert paths.resolve_app_dir() == home / "AppData" / "Roaming" / "IssueDeck"
 
 
 def test_macos_native_path(home, monkeypatch):
     monkeypatch.setattr(paths.sys, "platform", "darwin")
     assert paths.resolve_app_dir() == (
-        home / "Library" / "Application Support" / "JiraPuller")
+        home / "Library" / "Application Support" / "IssueDeck")
 
 
 def test_linux_native_path_defaults_to_dot_config(home, monkeypatch):
@@ -59,6 +60,40 @@ def test_env_override_wins_over_native(home, monkeypatch):
     monkeypatch.setattr(paths.sys, "platform", "linux")
     monkeypatch.setenv(paths.HOME_ENV_VAR, str(home / "explicit"))
     assert paths.resolve_app_dir() == home / "explicit"
+
+
+def test_legacy_env_override_still_honored(home, monkeypatch):
+    # The former JIRA_PULLER_HOME keeps working as a fallback.
+    monkeypatch.setattr(paths.sys, "platform", "linux")
+    monkeypatch.setenv(paths.LEGACY_HOME_ENV_VAR, str(home / "legacy_env"))
+    assert paths.resolve_app_dir() == home / "legacy_env"
+
+
+def test_new_env_override_wins_over_legacy_env(home, monkeypatch):
+    monkeypatch.setattr(paths.sys, "platform", "linux")
+    monkeypatch.setenv(paths.HOME_ENV_VAR, str(home / "new_env"))
+    monkeypatch.setenv(paths.LEGACY_HOME_ENV_VAR, str(home / "legacy_env"))
+    assert paths.resolve_app_dir() == home / "new_env"
+
+
+def test_macos_migrates_from_former_jirapuller_dir(home, monkeypatch):
+    # A macOS user with data under the old "JiraPuller" native dir keeps it after
+    # the rename, copied forward into the new "IssueDeck" native dir.
+    monkeypatch.setattr(paths.sys, "platform", "darwin")
+    support = home / "Library" / "Application Support"
+    old = support / "JiraPuller"
+    old.mkdir(parents=True)
+    (old / "config.json").write_text(json.dumps({"base_url": "https://old"}), encoding="utf-8")
+    (old / "views.json").write_text('{"views": []}', encoding="utf-8")
+
+    result = paths.migrate_legacy(keyring_available=False)
+
+    assert result.performed and result.migrated_config
+    new = support / "IssueDeck"
+    migrated = json.loads((new / "config.json").read_text(encoding="utf-8"))
+    assert migrated["base_url"] == "https://old"
+    assert (new / "views.json").exists()
+    assert old.exists()  # old dir is never deleted
 
 
 # --------------------------------------------------------------------------- #

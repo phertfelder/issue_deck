@@ -24,12 +24,14 @@ From install to a first export in a few minutes:
 2. **Run** it — `issue-deck` (or `python -m issue_deck`). On first launch a
    short **onboarding wizard** asks for your deployment (Cloud or Server/DC),
    URL, and token, lets you **Test connection**, and sets your default query
-   authoring mode. You can **Skip** it and use the Connection tab instead.
-3. **Fetch or import** — on **Query & Results**, choose filters and click
-   **Fetch**, or **Import CSV…** to load an existing export locally (no Jira
-   access needed).
-4. **Filter** — refine with the workbench (or raw JQL); **Preview JQL** shows the
-   exact query before you run it. Save a filter set as a **view** to reuse.
+   authoring mode. You can **Skip** it and use **Settings → connection** instead.
+3. **Fetch or import** — on **My Work**, pick a preset or toggle filter chips
+   and click **Show tickets**, or **Import CSV…** to load an existing export
+   locally (no Jira access needed).
+4. **Filter** — refine with the guided filter bar (every selection is a
+   removable chip backed by a plain-English scope summary); a plain-English
+   reading and raw JQL live under **More filters**. Save a filter set as a
+   **view** to reuse.
 5. **Export** — click **Export…** and pick Markdown / JSONL / CSV / a pack.
 
 Change any default later in **File → Settings** (which can also edit your
@@ -55,10 +57,13 @@ The sections below cover each step in detail.
 - Exports the result set as combined Markdown, one Markdown file per ticket,
   JSONL, or CSV.
 
-The UI has two tabs: **Connection** (credentials + custom-field ids) and
-**Query & Results** (filters, saved views, results table, issue detail panel,
-export buttons). Fetching, CSV parsing, and value sampling run off the UI thread
-so the window stays responsive.
+The UI is a nav rail with four screens: **My Work** (a guided filter bar over
+your assigned tickets, with results table + issue detail panel), **Search**
+(broad, all-Jira discovery by project/client/person), **Reports** (analytics +
+the Markdown/JSONL/CSV/LLM-pack export builder), and **Settings** (connection
+credentials, custom-field ids, defaults, saved views, appearance). Fetching,
+CSV parsing, and value sampling run off the UI thread so the window stays
+responsive.
 
 > **For maintainers / LLM agents:** see [`docs/llm/`](docs/llm/) — `CONTEXT.md`,
 > `FEATURE_MAP.md`, `INVARIANTS.md`, `WORKFLOWS.md`, `ROADMAP.md`, `GAPS.md`.
@@ -151,7 +156,7 @@ python -m pip install pyinstaller
 pyinstaller packaging/issue_deck.spec
 ```
 
-This writes a onedir bundle to `dist/JiraPuller/` — run the `JiraPuller`
+This writes a onedir bundle to `dist/IssueDeck/` — run the `IssueDeck`
 executable inside it. Build on each target OS separately (a Windows executable
 must be built on Windows, macOS on macOS, etc.). The generated `build/` and
 `dist/` folders are gitignored and must **not** be committed; only
@@ -195,32 +200,41 @@ directory, resolved to the **platform-native** location:
 
 | OS | Data directory |
 |---|---|
-| **Windows** | `%APPDATA%\JiraPuller\` |
-| **macOS** | `~/Library/Application Support/JiraPuller/` |
+| **Windows** | `%APPDATA%\IssueDeck\` |
+| **macOS** | `~/Library/Application Support/IssueDeck/` |
 | **Linux** | `${XDG_CONFIG_HOME:-~/.config}/issue-deck/` |
 
-Set the `JIRA_PULLER_HOME` environment variable to override the location (useful
-for portable installs or testing). The exact path is shown in **Help → About**.
+Set the `ISSUE_DECK_HOME` environment variable to override the location (useful
+for portable installs or testing; the former `JIRA_PULLER_HOME` is still honored
+as a fallback). The exact path is shown in **Help → About**.
 
 **Migrating from older versions.** Versions of IssueDeck before this one stored
-everything in `~/.issue_deck`. On first launch the app **automatically migrates**
-that data (config, saved views, profiles) to the native location above — it never
-overwrites an existing native config, and it prints a one-line notice when it
-does so. Your token is migrated only when the OS keychain is unavailable (the
-plaintext fallback); when `keyring` is installed you'll simply re-enter the token
-so it lands in the keychain rather than a file. **The old `~/.issue_deck` folder
-is left in place** — once you've confirmed the app works, you can delete it
-manually.
+everything in `~/.issue_deck` — and, on Windows/macOS, under a `JiraPuller`
+directory (the app's former name). On first launch the app **automatically
+migrates** that data (config, saved views, profiles) to the native location
+above — it never overwrites an existing native config, and it prints a one-line
+notice when it does so. Your token is migrated only when the OS keychain is
+unavailable (the plaintext fallback); when `keyring` is installed you'll simply
+re-enter the token so it lands in the keychain rather than a file. **The old
+folder is left in place** — once you've confirmed the app works, you can delete
+it manually.
 
 ## 7. Query / filter workflow
 
-On the **Query & Results** tab:
+On the **My Work** screen the guided **filter bar** replaces the old form:
+each dimension (WHO / STATUS / TIME / TYPE / PRIORITY) is a row of toggle
+**chips**, every active selection also shows as a removable pill, a
+plain-English line summarises exactly what will be shown, and **Show tickets**
+runs it (an amber *Filters changed →* hint appears while edits are pending).
+One-click **presets** (My open tickets, Blocked, High priority, …) sit above
+the bar. Everything below is still available under **More filters**:
 
 1. Choose one or more **scopes** (OR-ed): *Assigned to me*, *Reported by me*,
-   *Watched by me*. "Watched by me" is enabled only when the instance supports
-   watcher search (detected automatically).
+   *Watched by me* (WHO chips). "Watched by me" is enabled only when the
+   instance supports watcher search (detected automatically).
 2. Select filters (all optional; combined with `AND`):
-   - **Status / Issue type / Status category** — multi-select.
+   - **Status / Issue type / Status category** — chips + multi-select.
+   - **Priority** — PRIORITY chips (pinned as `priority in (…)`).
    - **Projects / Sprint / Fix version** — narrowing clauses.
    - **Severity** — matched against the configured severity custom field
      (`cf[...] = "value"`); ignored if no severity field id is set.
@@ -242,9 +256,10 @@ On the **Query & Results** tab:
    `ORDER BY updated DESC`.
 4. Choose a **comment mode** (All / None / Latest N / Since a date). Comments are
    fetched per issue, so large result sets take longer.
-5. Click **Preview JQL** to see the exact generated query (and requested fields)
-   before running it; a warning appears for very broad searches.
-6. Click **Fetch** (or **Cancel** to abort). Progress is shown; the results table
+5. Click **Preview JQL** (under More filters) to see the exact generated query
+   (and requested fields) before running it; a warning appears for very broad
+   searches.
+6. Click **Show tickets** (or **Cancel** to abort). Progress is shown; the results table
    lists Key, Summary, Status, Type, Priority, Severity, Client, Assignee, Points,
    and Updated (columns toggleable). Select a row to see full details in the
    issue detail panel.

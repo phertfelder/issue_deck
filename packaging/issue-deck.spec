@@ -6,7 +6,7 @@ Build (from the repo root, in your venv with pyinstaller installed):
     pip install pyinstaller
     pyinstaller packaging/issue-deck.spec
 
-Produces a onedir bundle in ``dist/JiraPuller/`` (run the ``JiraPuller``
+Produces a onedir bundle in ``dist/IssueDeck/`` (run the ``IssueDeck``
 executable inside it). ``build/`` and ``dist/`` are gitignored — do NOT commit
 the generated binaries; only this spec is committed.
 
@@ -47,7 +47,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="JiraPuller",
+    name="IssueDeck",
     console=False,          # GUI app: no console window on Windows
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -62,5 +62,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="JiraPuller",
+    name="IssueDeck",
 )

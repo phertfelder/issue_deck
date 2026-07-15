@@ -15,7 +15,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # Isolate the app data dir so tests never read/write the real per-user location
 # (constants.APP_DIR resolves from this on import). Tests that exercise path
 # resolution delenv it explicitly.
-os.environ.setdefault("JIRA_PULLER_HOME", tempfile.mkdtemp(prefix="issue_deck_test_"))
+os.environ.setdefault("ISSUE_DECK_HOME", tempfile.mkdtemp(prefix="issue_deck_test_"))
 
 # Make the repo root importable even without an editable install.
 REPO_ROOT = Path(__file__).resolve().parents[2]

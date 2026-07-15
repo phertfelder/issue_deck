@@ -89,7 +89,7 @@ so it behaves identically across every output. `RedactionSettings` covers:
   carries a `RedactingFilter` that scrubs tokens, `Authorization` headers, and
   credentials-in-URL from **every** record before it reaches a handler.
 - The HTTP client logs only the request method and path — never auth, query
-  params, or bodies. Verbose logging is opt-in via the `JIRA_PULLER_DEBUG`
+  params, or bodies. Verbose logging is opt-in via the `ISSUE_DECK_DEBUG`
   environment variable and remains redacted.
 
 ## Reporting a vulnerability

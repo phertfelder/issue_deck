@@ -102,7 +102,7 @@ def ev_type():
 def test_main_window_builds_expected_commands(qapp):
     win = MainWindow()
     titles = [c.title for c in win._build_commands()]
-    assert "Go to Home" in titles
+    assert "Go to My Work" in titles
     assert any(t.startswith("Run preset:") for t in titles)
     assert "Map custom fields…" in titles
     assert "Toggle raw JQL" in titles
