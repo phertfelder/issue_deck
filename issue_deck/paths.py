@@ -6,21 +6,22 @@ Every other module reads :data:`issue_deck.constants.APP_DIR` (derived from
 
 Layout (config + data share one directory — this is a small single-user tool):
 
-* **Windows**: ``%APPDATA%\\JiraPuller``
-* **macOS**: ``~/Library/Application Support/JiraPuller``
+* **Windows**: ``%APPDATA%\\IssueDeck``
+* **macOS**: ``~/Library/Application Support/IssueDeck``
 * **Linux / other**: ``${XDG_CONFIG_HOME:-~/.config}/issue-deck``
 
-Earlier versions stored everything in ``~/.issue_deck`` (:func:`legacy_app_dir`).
-:func:`migrate_legacy` performs a one-time, **non-destructive** copy into the
-native location on startup; the old directory is never deleted.
+Earlier versions stored everything in ``~/.issue_deck`` (:func:`legacy_app_dir`)
+and, on Windows/macOS, under a ``JiraPuller`` directory (the app's former name).
+:func:`migrate_legacy` performs a one-time, **non-destructive** copy from either
+into the native location on startup; the old directories are never deleted.
 
 Resolution order:
 
-1. ``JIRA_PULLER_HOME`` environment variable — an explicit data dir (power users
-   and tests).
+1. ``ISSUE_DECK_HOME`` environment variable — an explicit data dir (power users
+   and tests). The former ``JIRA_PULLER_HOME`` is still honored as a fallback.
 2. The platform-native path above.
 
-The legacy directory is intentionally *not* part of resolution: the app always
+The legacy directories are intentionally *not* part of resolution: the app always
 converges on the native path, and migration copies data forward once.
 """
 
@@ -33,14 +34,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Human-facing directory name on Windows / macOS.
-_APP_NAME = "JiraPuller"
+_APP_NAME = "IssueDeck"
+# The app's former name, kept only so existing data can be migrated forward.
+_OLD_APP_NAME = "JiraPuller"
 # XDG convention on Linux: lowercase, dashed.
 _XDG_DIR_NAME = "issue-deck"
 # Plaintext token fallback filename (migrated only under credential rules).
 _TOKEN_FILE_NAME = "token.txt"
 
 # Environment variable that overrides the resolved location entirely.
-HOME_ENV_VAR = "JIRA_PULLER_HOME"
+HOME_ENV_VAR = "ISSUE_DECK_HOME"
+# The former override variable, still honored as a fallback for continuity.
+LEGACY_HOME_ENV_VAR = "JIRA_PULLER_HOME"
 
 
 def _home() -> Path:
@@ -53,22 +58,44 @@ def legacy_app_dir() -> Path:
     return _home() / ".issue_deck"
 
 
-def _native_app_dir() -> Path:
-    """The platform-native data directory (ignoring override/migration)."""
+def _native_dir_for(app_name: str) -> Path | None:
+    """The platform-native dir for a given app name (``None`` when N/A on Linux)."""
     if sys.platform == "win32":
         base = os.environ.get("APPDATA") or (_home() / "AppData" / "Roaming")
-        return Path(base) / _APP_NAME
+        return Path(base) / app_name
     if sys.platform == "darwin":
-        return _home() / "Library" / "Application Support" / _APP_NAME
+        return _home() / "Library" / "Application Support" / app_name
+    # Linux / other POSIX use the XDG name, which never changed on rename.
+    return None
+
+
+def _native_app_dir() -> Path:
+    """The platform-native data directory (ignoring override/migration)."""
+    native = _native_dir_for(_APP_NAME)
+    if native is not None:
+        return native
     # Linux / other POSIX: follow the XDG Base Directory spec.
     xdg = os.environ.get("XDG_CONFIG_HOME")
     base = Path(xdg) if xdg else (_home() / ".config")
     return base / _XDG_DIR_NAME
 
 
+def _legacy_candidates() -> list[Path]:
+    """Pre-rename data dirs to migrate forward, most-preferred first.
+
+    Always the ``~/.issue_deck`` dotfolder; on Windows/macOS also the former
+    ``JiraPuller`` native dir (the Linux XDG name never changed on rename).
+    """
+    candidates = [legacy_app_dir()]
+    old_native = _native_dir_for(_OLD_APP_NAME)
+    if old_native is not None:
+        candidates.append(old_native)
+    return candidates
+
+
 def resolve_app_dir() -> Path:
     """The active data directory: an explicit override, else the native path."""
-    override = os.environ.get(HOME_ENV_VAR)
+    override = os.environ.get(HOME_ENV_VAR) or os.environ.get(LEGACY_HOME_ENV_VAR)
     if override:
         return Path(override)
     return _native_app_dir()
@@ -140,13 +167,17 @@ def migrate_legacy(*, keyring_available: bool | None = None) -> MigrationResult:
     legacy = legacy_app_dir()
     nothing = MigrationResult(False, False, False, "", legacy, target)
 
-    # Native already set up, or override points at the legacy dir itself: skip.
+    # Native already set up: the native dir always wins, no migration.
     if (target / "config.json").exists():
         return nothing
-    if not (legacy / "config.json").exists():
-        return nothing
-    if target.resolve() == legacy.resolve():
-        return nothing
+    # Pick the first legacy dir that actually holds a config and isn't the target.
+    legacy = next(
+        (c for c in _legacy_candidates()
+         if (c / "config.json").exists() and c.resolve() != target.resolve()),
+        None,
+    )
+    if legacy is None:
+        return MigrationResult(False, False, False, "", legacy_app_dir(), target)
 
     if keyring_available is None:
         from . import credentials  # local import avoids an import cycle

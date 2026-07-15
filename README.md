@@ -151,7 +151,7 @@ python -m pip install pyinstaller
 pyinstaller packaging/issue_deck.spec
 ```
 
-This writes a onedir bundle to `dist/JiraPuller/` — run the `JiraPuller`
+This writes a onedir bundle to `dist/IssueDeck/` — run the `IssueDeck`
 executable inside it. Build on each target OS separately (a Windows executable
 must be built on Windows, macOS on macOS, etc.). The generated `build/` and
 `dist/` folders are gitignored and must **not** be committed; only
@@ -195,22 +195,24 @@ directory, resolved to the **platform-native** location:
 
 | OS | Data directory |
 |---|---|
-| **Windows** | `%APPDATA%\JiraPuller\` |
-| **macOS** | `~/Library/Application Support/JiraPuller/` |
+| **Windows** | `%APPDATA%\IssueDeck\` |
+| **macOS** | `~/Library/Application Support/IssueDeck/` |
 | **Linux** | `${XDG_CONFIG_HOME:-~/.config}/issue-deck/` |
 
-Set the `JIRA_PULLER_HOME` environment variable to override the location (useful
-for portable installs or testing). The exact path is shown in **Help → About**.
+Set the `ISSUE_DECK_HOME` environment variable to override the location (useful
+for portable installs or testing; the former `JIRA_PULLER_HOME` is still honored
+as a fallback). The exact path is shown in **Help → About**.
 
 **Migrating from older versions.** Versions of IssueDeck before this one stored
-everything in `~/.issue_deck`. On first launch the app **automatically migrates**
-that data (config, saved views, profiles) to the native location above — it never
-overwrites an existing native config, and it prints a one-line notice when it
-does so. Your token is migrated only when the OS keychain is unavailable (the
-plaintext fallback); when `keyring` is installed you'll simply re-enter the token
-so it lands in the keychain rather than a file. **The old `~/.issue_deck` folder
-is left in place** — once you've confirmed the app works, you can delete it
-manually.
+everything in `~/.issue_deck` — and, on Windows/macOS, under a `JiraPuller`
+directory (the app's former name). On first launch the app **automatically
+migrates** that data (config, saved views, profiles) to the native location
+above — it never overwrites an existing native config, and it prints a one-line
+notice when it does so. Your token is migrated only when the OS keychain is
+unavailable (the plaintext fallback); when `keyring` is installed you'll simply
+re-enter the token so it lands in the keychain rather than a file. **The old
+folder is left in place** — once you've confirmed the app works, you can delete
+it manually.
 
 ## 7. Query / filter workflow
 
