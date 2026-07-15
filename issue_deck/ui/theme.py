@@ -33,6 +33,15 @@ SEGMENTED_OBJECT = "Segmented"
 SEGMENTED_BTN_OBJECT = "SegmentedBtn"
 DRAWER_HEADER_OBJECT = "DrawerHeader"
 RAW_BANNER_OBJECT = "RawBanner"
+# Guided filter *bar* surfaces (recognition-over-recall redesign).
+FILTER_CHIP_OBJECT = "FilterChip"        # a toggle chip in a WHO/STATUS/… row
+PRESET_TAB_OBJECT = "PresetTab"          # a preset in the segmented preset row
+ACTIVE_CHIP_OBJECT = "ActiveChip"        # a removable "active filter" pill
+ACTIVE_CHIP_CLOSE_OBJECT = "ActiveChipClose"
+ROW_LABEL_OBJECT = "FilterRowLabel"      # the WHO/STATUS/… caption
+SCOPE_SUMMARY_OBJECT = "ScopeSummary"    # the plain-English "Showing …" line
+PRIMARY_ACTION_OBJECT = "PrimaryAction"  # the "Show tickets" primary button
+DIRTY_HINT_OBJECT = "DirtyHint"          # the amber "Filters changed →" hint
 
 
 @dataclass(frozen=True)
@@ -337,6 +346,90 @@ QLabel#{RAW_BANNER_OBJECT} {{
     border: 1px solid {t.amber};
     border-radius: 8px;
     padding: 7px 10px;
+}}
+
+/* ---- guided filter bar (My Work) ---- */
+QLabel#{ROW_LABEL_OBJECT} {{
+    color: {t.text_muted};
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}}
+QToolButton#{FILTER_CHIP_OBJECT} {{
+    background-color: transparent;
+    color: {t.text_secondary};
+    border: 1px solid {t.border_strong};
+    border-radius: 13px;
+    padding: 4px 12px;
+    font-size: 12px;
+}}
+QToolButton#{FILTER_CHIP_OBJECT}:hover {{
+    border: 1px solid {t.accent};
+    color: {t.text};
+}}
+QToolButton#{FILTER_CHIP_OBJECT}:checked {{
+    background-color: {t.accent_fill};
+    color: #ffffff;
+    border: 1px solid {t.accent_fill};
+    font-weight: 600;
+}}
+QToolButton#{FILTER_CHIP_OBJECT}:focus {{
+    border: 1px solid {t.accent};
+}}
+QToolButton#{PRESET_TAB_OBJECT} {{
+    background-color: transparent;
+    color: {t.text_secondary};
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 5px 12px;
+    font-size: 12.5px;
+}}
+QToolButton#{PRESET_TAB_OBJECT}:hover {{
+    color: {t.text};
+}}
+QToolButton#{PRESET_TAB_OBJECT}:checked {{
+    background-color: {t.accent_bg};
+    color: {t.accent};
+    border: 1px solid {t.accent_fill};
+    font-weight: 600;
+}}
+QFrame#{ACTIVE_CHIP_OBJECT} {{
+    background-color: {t.elevated};
+    border: 1px solid {t.border_strong};
+    border-radius: 13px;
+}}
+QToolButton#{ACTIVE_CHIP_CLOSE_OBJECT} {{
+    background-color: transparent;
+    border: none;
+    color: {t.text_secondary};
+    font-size: 12px;
+    padding: 0 2px;
+}}
+QToolButton#{ACTIVE_CHIP_CLOSE_OBJECT}:hover {{
+    color: {t.risk};
+}}
+QLabel#{SCOPE_SUMMARY_OBJECT} {{
+    color: {t.text};
+    font-size: 13px;
+}}
+QLabel#{DIRTY_HINT_OBJECT} {{
+    color: {t.amber};
+    font-size: 11.5px;
+}}
+QPushButton#{PRIMARY_ACTION_OBJECT} {{
+    background-color: {t.accent_bg};
+    color: {t.accent};
+    border: 1px solid {t.accent_fill};
+    border-radius: 8px;
+    padding: 7px 18px;
+    font-weight: 600;
+}}
+QPushButton#{PRIMARY_ACTION_OBJECT}[dirty="true"] {{
+    background-color: {t.accent_fill};
+    color: #ffffff;
+}}
+QPushButton#{PRIMARY_ACTION_OBJECT}:hover {{
+    border: 1px solid {t.accent_hover};
 }}
 
 /* ---- focus rings (accessibility) ---- */

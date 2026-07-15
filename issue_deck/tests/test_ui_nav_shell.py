@@ -1,8 +1,9 @@
-"""Headless construction tests for the navigation shell (PR 1).
+"""Headless construction tests for the four-item navigation shell.
 
-Verifies the nav rail + QStackedWidget replaced the old QTabWidget without
-losing pages or behavior. Widgets run under the offscreen Qt platform; the app
-dir/config are redirected to a tmp path so nothing touches the real config.
+Verifies the nav rail + QStackedWidget expose the redesigned IA
+(My Work · Search · Reports · Settings) without losing pages or behavior.
+Widgets run under the offscreen Qt platform; the app dir/config are redirected
+to a tmp path so nothing touches the real config.
 """
 
 from __future__ import annotations
@@ -14,7 +15,6 @@ from issue_deck import constants
 from issue_deck.ui import theme
 from issue_deck.ui.main_window import MainWindow
 from issue_deck.ui.nav_rail import NavRail
-from issue_deck.ui.placeholder_page import PlaceholderPage
 
 
 @pytest.fixture(scope="module")
@@ -34,62 +34,65 @@ def test_shell_has_rail_and_stack(qapp):
     win = MainWindow()
     assert isinstance(win.rail, NavRail)
     assert isinstance(win.stack, QStackedWidget)
-    # Home, Query, Analytics, Exports, Settings — five stacked pages.
-    assert win.stack.count() == 5
+    # My Work, Search, Reports, Settings — four stacked pages, one per nav item.
+    assert win.stack.count() == 4
 
 
 def test_existing_pages_preserved_in_stack(qapp):
     win = MainWindow()
-    # The existing query and analytics widgets are reparented, not recreated.
-    assert win.stack.widget(MainWindow.PAGE_QUERY) is win.query
-    assert win.stack.widget(MainWindow.PAGE_ANALYTICS) is win.dashboard
+    # The workbench IS the My Work page; the analytics dashboard is folded into Reports.
+    assert win.stack.widget(MainWindow.PAGE_MYWORK) is win.query
+    assert win.dashboard in win.reports.findChildren(type(win.dashboard))
+    assert win.stack.widget(MainWindow.PAGE_REPORTS) is win.reports
     # Connection is demoted into the Settings page (still constructed + reachable).
     settings_page = win.stack.widget(MainWindow.PAGE_SETTINGS)
     assert win.connection in settings_page.findChildren(type(win.connection))
 
 
-def test_home_is_command_center_and_exports_placeholder(qapp):
-    from issue_deck.ui.home_page import HomePage
+def test_search_page_is_distinct_from_mywork(qapp):
+    from issue_deck.ui.search_page import SearchPage
     win = MainWindow()
-    assert isinstance(win.stack.widget(MainWindow.PAGE_HOME), HomePage)
-    assert isinstance(win.stack.widget(MainWindow.PAGE_EXPORTS), PlaceholderPage)
+    assert isinstance(win.stack.widget(MainWindow.PAGE_SEARCH), SearchPage)
+    assert win.stack.widget(MainWindow.PAGE_SEARCH) is win.search
 
 
-def test_home_preset_routes_to_query_and_fetches(qapp, monkeypatch):
+def test_preset_routes_to_mywork_and_fetches(qapp, monkeypatch):
     from issue_deck.models import SearchFilters
     win = MainWindow()
     ran = []
     monkeypatch.setattr(win.query, "run_filters", lambda f: ran.append(f))
     filters = SearchFilters(assigned_to_me=True, unresolved=True)
-    win.home.presetChosen.emit(filters)
-    assert win.stack.currentIndex() == MainWindow.PAGE_QUERY
+    win._run_preset(filters)
+    assert win.stack.currentIndex() == MainWindow.PAGE_MYWORK
     assert ran == [filters]
-
-
-def test_home_custom_query_routes_to_query(qapp):
-    win = MainWindow()
-    win.home.customQueryRequested.emit()
-    assert win.stack.currentIndex() == MainWindow.PAGE_QUERY
 
 
 def test_nav_buttons_switch_pages(qapp):
     win = MainWindow()
-    win._btn_analytics.click()
-    assert win.stack.currentIndex() == MainWindow.PAGE_ANALYTICS
-    win._btn_home.click()
-    assert win.stack.currentIndex() == MainWindow.PAGE_HOME
-    # Query and Results share one page until the split lands.
-    win._btn_results.click()
-    assert win.stack.currentIndex() == MainWindow.PAGE_QUERY
+    win._btn_search.click()
+    assert win.stack.currentIndex() == MainWindow.PAGE_SEARCH
+    win._btn_reports.click()
+    assert win.stack.currentIndex() == MainWindow.PAGE_REPORTS
+    win._btn_mywork.click()
+    assert win.stack.currentIndex() == MainWindow.PAGE_MYWORK
+
+
+def test_no_duplicate_results_nav_item(qapp):
+    # The redesign removes the duplicate "Results" item; every rail button maps
+    # to a distinct page.
+    win = MainWindow()
+    labels = [b.text() for b in (win._btn_mywork, win._btn_search,
+                                 win._btn_reports, win._btn_settings)]
+    assert labels == ["My Work", "Search", "Reports", "Settings"]
 
 
 def test_initial_page_depends_on_base_url(qapp):
-    # Configured → opens on Query; the button group reflects it.
+    # Configured → opens on My Work; the button group reflects it.
     win = MainWindow()
     win.cfg.base_url = "https://x.atlassian.net"
     win._build_shell()
-    assert win.stack.currentIndex() == MainWindow.PAGE_QUERY
-    assert win._btn_query.isChecked()
+    assert win.stack.currentIndex() == MainWindow.PAGE_MYWORK
+    assert win._btn_mywork.isChecked()
 
 
 def test_build_qss_covers_both_modes(qapp):

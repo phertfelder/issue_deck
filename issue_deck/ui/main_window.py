@@ -1,13 +1,16 @@
 """Main window: a left nav rail driving a QStackedWidget of pages.
 
-PR 1 of the workbench redesign (see ``docs/design``) swaps the old
-``QTabWidget`` for a task-first navigation shell. This is a pure re-parenting:
-the existing Connection, Query & Results, and Analytics widgets become stacked
-pages unchanged, joined by placeholder Home and Exports pages that later PRs
-build out. Connection is demoted from a top-level tab into the Settings page.
+The recognition-over-recall redesign collapses the old six-item nav (with Query
+and Results pointing at the same page) into the four-item information
+architecture from the brief:
 
-No behavior changes: config, client building, first-run onboarding, and the
-File/Help menus are all preserved; only the container changed.
+* **My Work** — presets + guided filter bar + results + detail (the workbench).
+* **Search** — broad, all-Jira discovery (any project, client, or person).
+* **Reports** — the report/export builder, folding in Analytics.
+* **Settings** — connection, defaults, appearance (Connection demoted to here).
+
+Config, client building, first-run onboarding, and the File/Help menus are all
+preserved; the container and item list changed.
 """
 
 from __future__ import annotations
@@ -28,21 +31,19 @@ from ..config import AppConfig
 from ..jira_client import JiraClient, make_client
 from .connection_tab import ConnectionTab
 from .dashboard_tab import DashboardTab
-from .home_page import HomePage
 from .nav_rail import NavRail
-from .placeholder_page import PlaceholderPage
 from .query_tab import QueryTab
+from .reports_page import ReportsPage
+from .search_page import SearchPage
 from .theme import CONTENT_STACK_OBJECT, apply_theme
 
 
 class MainWindow(QMainWindow):
-    # Stack page indices. Query and Results both point at PAGE_QUERY until the
-    # query/results split lands in a later PR.
-    PAGE_HOME = 0
-    PAGE_QUERY = 1
-    PAGE_ANALYTICS = 2
-    PAGE_EXPORTS = 3
-    PAGE_SETTINGS = 4
+    # Stack page indices, one per nav item (four-item IA).
+    PAGE_MYWORK = 0
+    PAGE_SEARCH = 1
+    PAGE_REPORTS = 2
+    PAGE_SETTINGS = 3
 
     def __init__(self) -> None:
         super().__init__()
@@ -57,9 +58,11 @@ class MainWindow(QMainWindow):
 
         self.connection = ConnectionTab(self.cfg)
         self.query = QueryTab(self.cfg, self.sync_config, self.build_client)
-        # A successful connection test lets the query tab probe instance
-        # capabilities (e.g. gate "Watched by me" where watcher search is off).
+        self.search = SearchPage(self.cfg, self.sync_config, self.build_client)
+        # A successful connection test lets the work/search pages probe instance
+        # capabilities (gate "Watched by me"; fill Search's pickers with real values).
         self.connection.connected.connect(self.query.on_connected)
+        self.connection.connected.connect(self.search.on_connected)
 
         # Local analytics over whatever the query tab currently holds. It recomputes
         # on every dataset change (fetch/import/merge/clear) and needs no Jira access.
@@ -88,11 +91,9 @@ class MainWindow(QMainWindow):
 
         cmds: list[Command] = []
         nav = [
-            ("Home", self.PAGE_HOME, self._btn_home),
-            ("Query", self.PAGE_QUERY, self._btn_query),
-            ("Results", self.PAGE_QUERY, self._btn_results),
-            ("Analytics", self.PAGE_ANALYTICS, self._btn_analytics),
-            ("Exports", self.PAGE_EXPORTS, self._btn_exports),
+            ("My Work", self.PAGE_MYWORK, self._btn_mywork),
+            ("Search", self.PAGE_SEARCH, self._btn_search),
+            ("Reports", self.PAGE_REPORTS, self._btn_reports),
             ("Settings", self.PAGE_SETTINGS, self._btn_settings),
         ]
         for label, idx, btn in nav:
@@ -106,15 +107,15 @@ class MainWindow(QMainWindow):
             cmds.append(Command(f"Run saved view: {name}", "Saved view",
                                 (lambda n=name: self._run_saved_view(n)), keywords="view"))
         cmds.append(Command("Import Jira CSV…", "Action",
-                            lambda: self._home_query_action(self.query._import_csv),
+                            lambda: self._mywork_action(self.query._import_csv),
                             keywords="csv import"))
         cmds.append(Command("Map custom fields…", "Action", self._open_field_mapping,
                             keywords="field discovery mapping"))
         cmds.append(Command("Export…", "Action",
-                            lambda: self._home_query_action(self.query._open_export_dialog),
+                            lambda: self._mywork_action(self.query._open_export_dialog),
                             keywords="export pack llm"))
         cmds.append(Command("Toggle raw JQL", "Action",
-                            lambda: self._home_query_action(self.query.enter_raw_mode),
+                            lambda: self._mywork_action(self.query.enter_raw_mode),
                             keywords="raw jql advanced"))
         cmds.append(Command("Open Settings…", "Action", self._open_settings,
                             keywords="preferences defaults"))
@@ -126,7 +127,7 @@ class MainWindow(QMainWindow):
         return cmds
 
     def _reveal_issue(self, key: str) -> None:
-        self._navigate(self.PAGE_QUERY, self._btn_query)
+        self._navigate(self.PAGE_MYWORK, self._btn_mywork)
         self.query.reveal_issue(key)
 
     def _open_field_mapping(self) -> None:
@@ -140,24 +141,16 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.stack.setObjectName(CONTENT_STACK_OBJECT)
         # Order must match the PAGE_* indices above.
-        self.home = HomePage(self.cfg, self.query.views, self.build_client)
-        self._wire_home()
-        self.stack.addWidget(self.home)
-        self.stack.addWidget(self.query)
-        self.stack.addWidget(self.dashboard)
-        self.stack.addWidget(PlaceholderPage(
-            "Exports",
-            "This will become the report & LLM-pack builder. For now, export "
-            "actions still live on the Query & Results page."))
-        self.stack.addWidget(self._build_settings_page())
+        self.reports = ReportsPage(self.dashboard, self.query._open_export_dialog)
+        self.stack.addWidget(self.query)               # PAGE_MYWORK
+        self.stack.addWidget(self.search)              # PAGE_SEARCH
+        self.stack.addWidget(self.reports)             # PAGE_REPORTS
+        self.stack.addWidget(self._build_settings_page())  # PAGE_SETTINGS
 
         self.rail = NavRail()
-        self._btn_home = self.rail.add_item("Home", self.PAGE_HOME)
-        self._btn_query = self.rail.add_item("Query", self.PAGE_QUERY)
-        # Not split from Query yet — points at the same combined page for now.
-        self._btn_results = self.rail.add_item("Results", self.PAGE_QUERY)
-        self._btn_analytics = self.rail.add_item("Analytics", self.PAGE_ANALYTICS)
-        self._btn_exports = self.rail.add_item("Exports", self.PAGE_EXPORTS)
+        self._btn_mywork = self.rail.add_item("My Work", self.PAGE_MYWORK)
+        self._btn_search = self.rail.add_item("Search", self.PAGE_SEARCH)
+        self._btn_reports = self.rail.add_item("Reports", self.PAGE_REPORTS)
         self.rail.add_stretch()
         self._btn_settings = self.rail.add_item("Settings", self.PAGE_SETTINGS)
         self.rail.navigated.connect(self._on_nav)
@@ -170,9 +163,9 @@ class MainWindow(QMainWindow):
         row.addWidget(self.stack, 1)
         self.setCentralWidget(central)
 
-        # Open on Query when configured, else Settings (which holds Connection).
+        # Open on My Work when configured, else Settings (which holds Connection).
         if self.cfg.base_url:
-            self._navigate(self.PAGE_QUERY, self._btn_query)
+            self._navigate(self.PAGE_MYWORK, self._btn_mywork)
         else:
             self._navigate(self.PAGE_SETTINGS, self._btn_settings)
 
@@ -211,33 +204,18 @@ class MainWindow(QMainWindow):
         self.rail.set_active(button)
 
     def _on_nav(self, page_index: int) -> None:
-        """Rail click handler: switch pages and refresh Home when it's shown."""
+        """Rail click handler: switch the visible page."""
         self.stack.setCurrentIndex(page_index)
-        if page_index == self.PAGE_HOME:
-            self.home.refresh()
 
-    # ---- Home command center routing ----
-    def _wire_home(self) -> None:
-        """Route Home intents into the existing Query/Results flows."""
-        self.home.presetChosen.connect(self._run_preset)
-        self.home.savedViewChosen.connect(self._run_saved_view)
-        self.home.customQueryRequested.connect(
-            lambda: self._navigate(self.PAGE_QUERY, self._btn_query))
-        self.home.importCsvRequested.connect(
-            lambda: self._home_query_action(self.query._import_csv))
-        self.home.discoverFieldsRequested.connect(
-            lambda: self._home_query_action(self.query._discover_values))
-        self.home.rawJqlRequested.connect(
-            lambda: self._home_query_action(self.query.enter_raw_mode))
-
-    def _home_query_action(self, action) -> None:
-        """Navigate to the Query page, then run a QueryTab action there."""
-        self._navigate(self.PAGE_QUERY, self._btn_query)
+    # ---- cross-page routing (command palette / presets) ----
+    def _mywork_action(self, action) -> None:
+        """Navigate to the My Work page, then run a QueryTab action there."""
+        self._navigate(self.PAGE_MYWORK, self._btn_mywork)
         action()
 
     def _run_preset(self, filters) -> None:
-        """Apply a Home preset's filters on the Query page and fetch."""
-        self._navigate(self.PAGE_QUERY, self._btn_query)
+        """Apply a preset's filters on the My Work page and fetch."""
+        self._navigate(self.PAGE_MYWORK, self._btn_mywork)
         self.query.run_filters(filters)
 
     def _run_saved_view(self, name: str) -> None:
@@ -319,9 +297,8 @@ class MainWindow(QMainWindow):
         self.cfg.save_token(dlg.raw_token())
         self.connection.load_config(self.cfg)
         self.query.apply_fetch_defaults()
-        self.home.refresh_connection()
         if self.cfg.base_url:
-            self._navigate(self.PAGE_QUERY, self._btn_query)
+            self._navigate(self.PAGE_MYWORK, self._btn_mywork)
         else:
             self._navigate(self.PAGE_SETTINGS, self._btn_settings)
         if dlg.want_csv_import:

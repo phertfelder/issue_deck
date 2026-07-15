@@ -40,6 +40,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -79,16 +80,55 @@ from ..views import SavedViewStore
 from .csv_wizard import CsvImportWizard
 from .detail_panel import IssueDetailPanel
 from .empty_state import EmptyState
+from .filter_bar import ActiveChip, ChipRow
 from .jql_helper_dialog import JqlHelperDialog
 from .merge_dialog import DeltaDialog
 from .query_builder import CollapsibleSection, SegmentedToggle
 from .refresh_dialog import RefreshDialog
 from .results_table import ResultsTable
-from .theme import HOME_PILL_OBJECT, RAW_BANNER_OBJECT
+from .theme import (
+    DIRTY_HINT_OBJECT,
+    HOME_PILL_OBJECT,
+    PRESET_TAB_OBJECT,
+    PRIMARY_ACTION_OBJECT,
+    RAW_BANNER_OBJECT,
+    ROW_LABEL_OBJECT,
+    SCOPE_SUMMARY_OBJECT,
+)
 from .value_discovery_dialog import ValueDiscoveryDialog
 from .workers import ExportWorker, FetchWorker, ValidateJqlWorker
 
 _FIELD_OPS = ["~", "=", "!=", ">=", "<=", "in"]
+
+# Guided filter-bar chip options (design's WHO / STATUS / TIME / TYPE / PRIORITY).
+_WHO_OPTS = [("assigned", "Assigned to me"), ("reported", "Reported by me"),
+             ("watched", "Watched by me")]
+# Status chips mix status *categories* (Open/In progress/Done) with the common
+# "Blocked" status; the value distinguishes which underlying control it drives.
+_BLOCKED_STATUS = "Blocked"
+_STATUS_OPTS = [("To Do", "Open"), ("In Progress", "In progress"),
+                ("__blocked__", "Blocked"), ("Done", "Done")]
+_TIME_OPTS = [("0", "Any time"), ("1", "Updated today"), ("7", "Last 7 days"),
+              ("30", "Last 30 days")]
+_TYPE_OPTS = [("Bug", "Bug"), ("Task", "Task"), ("Story", "Story"),
+              ("Incident", "Incident"), ("Epic", "Epic")]
+_PRIORITY_ORDER = ["Highest", "High", "Medium", "Low"]
+_PRIORITY_OPTS = [(p, p) for p in _PRIORITY_ORDER]
+
+
+def _preset_filters() -> list[tuple[str, SearchFilters]]:
+    """The persistent My Work presets (label → filters), from the design brief."""
+    return [
+        ("Open", SearchFilters(assigned_to_me=True, unresolved=True)),
+        ("All mine", SearchFilters(assigned_to_me=True)),
+        ("Recent", SearchFilters(assigned_to_me=True, updated_days=7)),
+        ("Blocked", SearchFilters(assigned_to_me=True, statuses=[_BLOCKED_STATUS])),
+        ("High priority", SearchFilters(
+            assigned_to_me=True, unresolved=True,
+            field_filters=[FieldFilter(field="priority", op="in",
+                                       value="Highest, High", label="Priority")])),
+        ("Reported by me", SearchFilters(assigned_to_me=False, reported_by_me=True)),
+    ]
 
 
 class QueryTab(QWidget):
@@ -111,6 +151,9 @@ class QueryTab(QWidget):
         self._capabilities = Capabilities()
         self._last_jql = ""
         self._last_warnings: list = []
+        # The filters behind the currently-loaded dataset. Editing the filter bar
+        # away from this marks the results "dirty" until Show tickets re-fetches.
+        self._applied_filters: SearchFilters | None = None
         self._fetch_thread: QThread | None = None
         self._fetch_worker: FetchWorker | None = None
         self._export_thread: QThread | None = None
@@ -154,47 +197,169 @@ class QueryTab(QWidget):
 
         split.addWidget(self._build_query_panel())
         split.addWidget(self._build_results_panel())
-        split.setSizes([340, 520])
+        split.setSizes([380, 470])
 
     def _build_query_panel(self) -> QWidget:
         filt = QWidget()
         root = QVBoxLayout(filt)
 
-        # --- saved views bar ---
-        root.addWidget(self._build_views_bar())
+        # --- My Work header: title + preset tabs + saved-views entry ---
+        root.addWidget(self._build_mywork_header())
 
-        # --- header: title + Guided/Raw toggle ---
-        header = QHBoxLayout()
-        header.addWidget(QLabel("<b>Build your query</b>"))
-        header.addStretch(1)
-        self.mode_toggle = SegmentedToggle(["Guided", "Raw"])
-        self.mode_toggle.changed.connect(self._on_mode_changed)
-        header.addWidget(self.mode_toggle)
-        root.addLayout(header)
+        # --- guided filter *bar*: one labelled toggle-chip row per dimension ---
+        root.addWidget(self._build_chip_bar())
+
+        # --- active chips + plain-English scope + Show tickets primary ---
+        root.addWidget(self._build_summary_bar())
 
         # Backing raw-mode state: kept (but hidden) so _filters/_apply_filters and
         # the existing round-trip tests are unchanged; the toggle drives it.
         self.cb_raw = QCheckBox("Raw JQL advanced mode (overrides the builder)")
         self.cb_raw.setVisible(False)
         self.cb_raw.toggled.connect(self._toggle_raw)
-        root.addWidget(self.cb_raw)
 
-        # --- guided body ⇄ raw body ---
+        # --- guided body ⇄ raw body (the detailed form, now advanced) ---
         self._body_stack = QStackedWidget()
         self._body_stack.addWidget(self._build_guided_body())
         self._body_stack.addWidget(self._build_raw_body())
-        root.addWidget(self._body_stack)
 
-        # --- shared: fetch options, actions, advanced drawer ---
-        root.addWidget(self._build_fetch_options())
-        root.addWidget(self._build_actions())
-        root.addWidget(self._build_advanced_drawer())
-        root.addStretch(1)
+        # Everything the chip bar doesn't surface — projects, dates, pinned
+        # fields, fetch options, and the raw-JQL escape hatch — lives behind one
+        # "More filters" disclosure, so the default path stays uncluttered while
+        # nothing is removed.
+        self._advanced = CollapsibleSection(
+            "More filters — projects, dates, pinned fields, raw JQL")
+        adv_header = QHBoxLayout()
+        adv_header.addWidget(QLabel("<b>Build your query</b>"))
+        adv_header.addStretch(1)
+        self.mode_toggle = SegmentedToggle(["Guided", "Raw"])
+        self.mode_toggle.changed.connect(self._on_mode_changed)
+        adv_header.addWidget(self.mode_toggle)
+        adv_hw = QWidget()
+        adv_hw.setLayout(adv_header)
+        self._advanced.addWidget(self._build_views_bar())
+        self._advanced.addWidget(adv_hw)
+        self._advanced.addWidget(self.cb_raw)
+        self._advanced.addWidget(self._body_stack)
+        self._advanced.addWidget(self._build_fetch_options())
+        self._advanced.addWidget(self._build_actions())
+        self._advanced.addWidget(self._build_advanced_drawer())
+        # The advanced body can grow tall (pinned fields, fetch options); keep it
+        # scrollable so the header / chip bar / Show-tickets primary above never
+        # get pushed off-screen when it expands.
+        adv_scroll = QScrollArea()
+        adv_scroll.setWidgetResizable(True)
+        adv_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        adv_scroll.setWidget(self._advanced)
+        root.addWidget(adv_scroll, 1)
+        return filt
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(filt)
-        return scroll
+    # ---- My Work header (title + presets + saved views) ----
+    def _build_mywork_header(self) -> QWidget:
+        w = QWidget()
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 0)
+        title = QLabel("My Work")
+        f = title.font()
+        f.setPointSize(f.pointSize() + 3)
+        f.setBold(True)
+        title.setFont(f)
+        row.addWidget(title)
+
+        presets = QWidget()
+        presets.setObjectName("Segmented")  # reuse the pill container look
+        pr = QHBoxLayout(presets)
+        pr.setContentsMargins(4, 3, 4, 3)
+        pr.setSpacing(4)
+        self._preset_tabs: list[QToolButton] = []
+        for i, (label, _f) in enumerate(_preset_filters()):
+            tab = QToolButton()
+            tab.setObjectName(PRESET_TAB_OBJECT)
+            tab.setText(label)
+            tab.setCheckable(True)
+            tab.setAutoRaise(False)
+            tab.setCursor(Qt.CursorShape.PointingHandCursor)
+            tab.setAccessibleName(f"{label} preset")
+            tab.clicked.connect(lambda _=False, idx=i: self._run_preset_tab(idx))
+            self._preset_tabs.append(tab)
+            pr.addWidget(tab)
+        row.addWidget(presets)
+        row.addStretch(1)
+
+        self.btn_saved_views = QToolButton()
+        self.btn_saved_views.setText("★ Saved views (0)")
+        self.btn_saved_views.setAutoRaise(True)
+        self.btn_saved_views.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_saved_views.setToolTip("Manage saved views (in More filters).")
+        self.btn_saved_views.clicked.connect(self._open_saved_views)
+        row.addWidget(self.btn_saved_views)
+        return w
+
+    # ---- guided filter bar ----
+    def _build_chip_bar(self) -> QWidget:
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(0, 4, 0, 4)
+        v.setSpacing(6)
+        self._chip_rows: dict[str, ChipRow] = {}
+        for key, caption, opts in (
+            ("who", "WHO", _WHO_OPTS),
+            ("status", "STATUS", _STATUS_OPTS),
+            ("time", "TIME", _TIME_OPTS),
+            ("type", "TYPE", _TYPE_OPTS),
+            ("priority", "PRIORITY", _PRIORITY_OPTS),
+        ):
+            crow = ChipRow(caption, opts)
+            crow.toggled.connect(
+                lambda value, on, k=key: self._on_chip_toggled(k, value, on))
+            self._chip_rows[key] = crow
+            v.addWidget(crow)
+
+        # Raw JQL is one Advanced control on the PRIORITY row, per the spec.
+        adv_jql = QToolButton()
+        adv_jql.setObjectName(ROW_LABEL_OBJECT)
+        adv_jql.setText("Advanced JQL…")
+        adv_jql.setAutoRaise(True)
+        adv_jql.setCursor(Qt.CursorShape.PointingHandCursor)
+        adv_jql.setStyleSheet("padding:4px 8px;")
+        adv_jql.setToolTip("Drop into raw JQL — the guided filters are ignored.")
+        adv_jql.clicked.connect(self._open_advanced_jql)
+        self._chip_rows["priority"].add_trailing(adv_jql)
+        return w
+
+    # ---- active chips + scope summary + Show tickets ----
+    def _build_summary_bar(self) -> QWidget:
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(0, 4, 0, 0)
+        v.setSpacing(7)
+
+        active_host = QWidget()
+        self._active_row = QHBoxLayout(active_host)
+        self._active_row.setContentsMargins(0, 0, 0, 0)
+        self._active_row.setSpacing(6)
+        v.addWidget(active_host)
+
+        bottom = QHBoxLayout()
+        self.lbl_summary = QLabel("")
+        self.lbl_summary.setObjectName(SCOPE_SUMMARY_OBJECT)
+        self.lbl_summary.setWordWrap(True)
+        bottom.addWidget(self.lbl_summary, 1)
+        self.lbl_dirty = QLabel("Filters changed →")
+        self.lbl_dirty.setObjectName(DIRTY_HINT_OBJECT)
+        self.lbl_dirty.setVisible(False)
+        bottom.addWidget(self.lbl_dirty)
+        self.btn_fetch = QPushButton("Show tickets")
+        self.btn_fetch.setObjectName(PRIMARY_ACTION_OBJECT)
+        self.btn_fetch.setToolTip("Run the current filters against Jira.")
+        self.btn_fetch.clicked.connect(self._fetch)
+        bottom.addWidget(self.btn_fetch)
+        self.btn_cancel = QPushButton("Cancel")
+        self.btn_cancel.clicked.connect(self._cancel_fetch)
+        self.btn_cancel.setEnabled(False)
+        bottom.addWidget(self.btn_cancel)
+        v.addLayout(bottom)
+        return w
 
     def _build_guided_body(self) -> QWidget:
         """The structured filter controls (hidden while in Raw mode)."""
@@ -303,6 +468,8 @@ class QueryTab(QWidget):
         return body
 
     def _build_actions(self) -> QWidget:
+        # The primary Show-tickets / Cancel controls live in the summary bar; this
+        # advanced row keeps the JQL-authoring helpers (Preview + JQL helper).
         actions = QHBoxLayout()
         self.btn_jql_helper = QPushButton("JQL helper…")
         self.btn_jql_helper.setToolTip(
@@ -312,15 +479,8 @@ class QueryTab(QWidget):
         actions.addWidget(self.btn_jql_helper)
         self.btn_preview = QPushButton("Preview JQL")
         self.btn_preview.clicked.connect(self._preview)
-        self.btn_fetch = QPushButton("Fetch")
-        self.btn_fetch.clicked.connect(self._fetch)
-        self.btn_cancel = QPushButton("Cancel")
-        self.btn_cancel.clicked.connect(self._cancel_fetch)
-        self.btn_cancel.setEnabled(False)
         actions.addStretch()
         actions.addWidget(self.btn_preview)
-        actions.addWidget(self.btn_fetch)
-        actions.addWidget(self.btn_cancel)
         aw = QWidget()
         aw.setLayout(actions)
         return aw
@@ -734,6 +894,7 @@ class QueryTab(QWidget):
         self.cb_raw.setChecked(f.raw_mode)
         self.ed_raw.setPlainText(f.raw_jql)
         self._set_field_filters(f.field_filters)
+        self._refresh_chip_bar()
 
     @staticmethod
     def _select_list(lst: QListWidget, wanted: list[str]) -> None:
@@ -775,6 +936,269 @@ class QueryTab(QWidget):
     def _on_mode_changed(self, index: int) -> None:
         """Guided/Raw toggle → drive the backing cb_raw (which syncs the rest)."""
         self.cb_raw.setChecked(index == 1)
+
+    # ================= guided filter bar =================
+    def _run_preset_tab(self, idx: int) -> None:
+        """A preset click sets its filters and immediately runs them (design)."""
+        presets = _preset_filters()
+        if not 0 <= idx < len(presets):
+            return
+        self.run_filters(presets[idx][1])
+
+    def _on_chip_toggled(self, key: str, value: str, on: bool) -> None:
+        """Translate a filter-bar chip click into the underlying form controls."""
+        if key == "who":
+            if value == "assigned":
+                self.cb_assigned.setChecked(on)
+            elif value == "reported":
+                self.cb_reported.setChecked(on)
+            elif value == "watched" and self.cb_watched.isEnabled():
+                self.cb_watched.setChecked(on)
+        elif key == "status":
+            if value == "__blocked__":
+                self._toggle_list_value(self.lst_status, _BLOCKED_STATUS, on)
+            elif (cb := self._cat_boxes.get(value)) is not None:
+                cb.setChecked(on)
+        elif key == "time":
+            self.sp_updated.setValue(int(value) if on else 0)
+        elif key == "type":
+            self._toggle_list_value(self.lst_type, value, on)
+        elif key == "priority":
+            vals = self._current_priority_values()
+            if on and value not in vals:
+                vals.append(value)
+            elif not on and value in vals:
+                vals.remove(value)
+            self._set_priority_values(vals)
+        self._after_filter_edit()
+
+    @staticmethod
+    def _toggle_list_value(lst: QListWidget, value: str, on: bool) -> None:
+        """Select/deselect a single value in a multi-select list by text."""
+        for i in range(lst.count()):
+            item = lst.item(i)
+            if item is not None and item.text().lower() == value.lower():
+                item.setSelected(on)
+                return
+        if on:  # a value not among the defaults (rare) — add it selected
+            item = QListWidgetItem(value)
+            lst.addItem(item)
+            item.setSelected(True)
+
+    # ---- priority chips <-> a single 'priority in (...)' pinned filter ----
+    def _current_priority_values(self) -> list[str]:
+        """Priority values currently pinned, ordered highest→lowest."""
+        found: set[str] = set()
+        for row in range(self.tbl_fields.rowCount()):
+            field_item = self.tbl_fields.item(row, 0)
+            value_item = self.tbl_fields.item(row, 2)
+            if field_item is None or field_item.text().strip().lower() != "priority":
+                continue
+            for part in (value_item.text() if value_item else "").split(","):
+                found.add(part.strip())
+        ordered = [p for p in _PRIORITY_ORDER if p in found]
+        ordered += [p for p in found if p and p not in _PRIORITY_ORDER]
+        return ordered
+
+    def _set_priority_values(self, values: list[str]) -> None:
+        """Replace the pinned priority filter with ``priority in (values)``."""
+        for row in reversed(range(self.tbl_fields.rowCount())):
+            item = self.tbl_fields.item(row, 0)
+            if item is not None and item.text().strip().lower() == "priority":
+                self.tbl_fields.removeRow(row)
+        ordered = [p for p in _PRIORITY_ORDER if p in values]
+        ordered += [p for p in values if p and p not in _PRIORITY_ORDER]
+        if ordered:
+            self._add_field_filter_row(
+                FieldFilter(field="priority", op="in", value=", ".join(ordered),
+                            label="Priority"))
+
+    def _remove_priority(self, value: str) -> None:
+        vals = [p for p in self._current_priority_values() if p != value]
+        self._set_priority_values(vals)
+
+    def _remove_field_filter(self, ff: FieldFilter) -> None:
+        """Remove the first pinned-field row matching ``ff`` (field/op/value)."""
+        for row in range(self.tbl_fields.rowCount()):
+            field_item = self.tbl_fields.item(row, 0)
+            value_item = self.tbl_fields.item(row, 2)
+            op_widget = self.tbl_fields.cellWidget(row, 1)
+            field = field_item.text().strip() if field_item else ""
+            value = value_item.text().strip() if value_item else ""
+            op = op_widget.currentText() if isinstance(op_widget, QComboBox) else "~"
+            if field == ff.field and op == ff.op and value == ff.value:
+                self.tbl_fields.removeRow(row)
+                return
+
+    # ---- filter-bar entry points ----
+    def _open_advanced_jql(self) -> None:
+        """Reveal the advanced area and drop into the raw-JQL editor."""
+        self._advanced.set_expanded(True)
+        self.enter_raw_mode()
+
+    def _open_saved_views(self) -> None:
+        """Reveal the saved-views controls (in the advanced disclosure)."""
+        self._advanced.set_expanded(True)
+        self.status.setText("Saved views — load, save, rename or delete below.")
+
+    def _clear_all_filters(self) -> None:
+        """Reset to the default 'My open tickets' scope (design: Clear all)."""
+        self._apply_filters(SearchFilters(assigned_to_me=True, unresolved=True))
+        self.status.setText("Filters cleared — back to your open tickets.")
+
+    def _after_filter_edit(self) -> None:
+        """Run after any chip/pill edit: re-sync the bar and the estimate."""
+        self._refresh_chip_bar()
+        self._refresh_estimate()
+
+    # ---- filter-bar rendering (source of truth = the form widgets) ----
+    def _refresh_chip_bar(self) -> None:
+        if not hasattr(self, "_chip_rows"):
+            return
+        self._sync_chips_from_filters()
+        self._rebuild_active_chips()
+        self._update_summary()
+        self._update_dirty()
+        self._update_preset_selection()
+
+    def _sync_chips_from_filters(self) -> None:
+        f = self._filters()
+        who = self._chip_rows["who"]
+        who.set_checked("assigned", f.assigned_to_me)
+        who.set_checked("reported", f.reported_by_me)
+        who.set_checked("watched", f.watched_by_me)
+        status = self._chip_rows["status"]
+        cats = set(f.status_categories)
+        status.set_checked("To Do", "To Do" in cats)
+        status.set_checked("In Progress", "In Progress" in cats)
+        status.set_checked("Done", "Done" in cats)
+        status.set_checked(
+            "__blocked__",
+            any(s.lower() == _BLOCKED_STATUS.lower() for s in f.statuses))
+        time_row = self._chip_rows["time"]
+        for val, _ in _TIME_OPTS:
+            time_row.set_checked(val, int(val) == f.updated_days)
+        type_row = self._chip_rows["type"]
+        types_lower = {t.lower() for t in f.issue_types}
+        for val, _ in _TYPE_OPTS:
+            type_row.set_checked(val, val.lower() in types_lower)
+        prio_row = self._chip_rows["priority"]
+        pv = set(self._current_priority_values())
+        for val, _ in _PRIORITY_OPTS:
+            prio_row.set_checked(val, val in pv)
+
+    def _active_filter_chips(self) -> list[tuple[str, Callable[[], None]]]:
+        """Every active filter as (label, remover), driving the removable pills."""
+        f = self._filters()
+        out: list[tuple[str, Callable[[], None]]] = []
+
+        def add(label: str, fn: Callable[[], None]) -> None:
+            out.append((label, fn))
+
+        if f.assigned_to_me:
+            add("Assigned to me", lambda: self.cb_assigned.setChecked(False))
+        if f.reported_by_me:
+            add("Reported by me", lambda: self.cb_reported.setChecked(False))
+        if f.watched_by_me:
+            add("Watched by me", lambda: self.cb_watched.setChecked(False))
+        if f.unresolved:
+            add("Unresolved", lambda: self.cb_unresolved.setChecked(False))
+        for cat in f.status_categories:
+            add(cat, lambda c=cat: self._cat_boxes[c].setChecked(False))
+        for s in f.statuses:
+            add(f"Status: {s}",
+                lambda ss=s: self._toggle_list_value(self.lst_status, ss, False))
+        if f.updated_days:
+            add(self._time_label(f.updated_days), lambda: self.sp_updated.setValue(0))
+        if f.created_days:
+            add(f"Created ≤ {f.created_days}d", lambda: self.sp_created.setValue(0))
+        if f.resolved_days:
+            add(f"Resolved ≤ {f.resolved_days}d", lambda: self.sp_resolved.setValue(0))
+        if f.due_days:
+            add(f"Due ≤ {f.due_days}d", lambda: self.sp_due.setValue(0))
+        for t in f.issue_types:
+            add(t, lambda tt=t: self._toggle_list_value(self.lst_type, tt, False))
+        for p in self._current_priority_values():
+            add(f"{p} priority", lambda pp=p: self._remove_priority(pp))
+        if f.client:
+            add(f'Client ~ "{f.client}"', self.ed_client.clear)
+        if f.text:
+            add(f'Text: "{f.text}"', self.ed_text.clear)
+        if f.projects:
+            add("Projects: " + ", ".join(f.projects), self.ed_projects.clear)
+        if f.sprint:
+            add(f"Sprint: {f.sprint}", self.ed_sprint.clear)
+        if f.fix_version:
+            add(f"Fix version: {f.fix_version}", self.ed_fix_version.clear)
+        if f.severity:
+            add(f"Severity: {f.severity}", self.ed_severity.clear)
+        for ff in f.field_filters:
+            if ff.field.strip().lower() == "priority":
+                continue  # surfaced as its own priority chips above
+            label = f"{ff.label or ff.field} {ff.op} {ff.value}"
+            add(label, lambda k=ff: self._remove_field_filter(k))
+        return out
+
+    @staticmethod
+    def _time_label(days: int) -> str:
+        return "Updated today" if days == 1 else f"Updated in last {days}d"
+
+    def _rebuild_active_chips(self) -> None:
+        while self._active_row.count():
+            item = self._active_row.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        chips = self._active_filter_chips()
+        if not chips:
+            empty = QLabel("No filters applied — showing everything in scope.")
+            empty.setStyleSheet("color: palette(mid); font-size:12px;")
+            self._active_row.addWidget(empty)
+            self._active_row.addStretch(1)
+            return
+        caption = QLabel("ACTIVE")
+        caption.setObjectName(ROW_LABEL_OBJECT)
+        self._active_row.addWidget(caption)
+        for label, remover in chips:
+            chip = ActiveChip(label)
+            chip.removed.connect(lambda r=remover: self._remove_active(r))
+            self._active_row.addWidget(chip)
+        clear = QToolButton()
+        clear.setText("Clear all")
+        clear.setAutoRaise(True)
+        clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        clear.setStyleSheet("color: palette(link); border:none; padding:2px 4px;")
+        clear.clicked.connect(self._clear_all_filters)
+        self._active_row.addWidget(clear)
+        self._active_row.addStretch(1)
+
+    def _remove_active(self, remover: Callable[[], None]) -> None:
+        remover()
+        self._after_filter_edit()
+
+    def _update_summary(self) -> None:
+        try:
+            cfg = self._config_provider()
+        except Exception:  # noqa: BLE001 - fall back to the last-known config
+            cfg = self.cfg
+        self.lbl_summary.setText("◎  " + explain(decompose(cfg, self._filters())))
+
+    def _update_dirty(self) -> None:
+        dirty = (self._applied_filters is not None
+                 and self._filters() != self._applied_filters)
+        self.lbl_dirty.setVisible(dirty)
+        self.btn_fetch.setProperty("dirty", "true" if dirty else "false")
+        style = self.btn_fetch.style()
+        if style is not None:
+            style.unpolish(self.btn_fetch)
+            style.polish(self.btn_fetch)
+
+    def _update_preset_selection(self) -> None:
+        current = self._filters()
+        match = next((i for i, (_, f) in enumerate(_preset_filters())
+                      if f == current), None)
+        for i, tab in enumerate(self._preset_tabs):
+            tab.setChecked(i == match)
 
     def _validate_raw(self) -> None:
         """Validate the raw JQL against Jira off-thread (maxResults=1)."""
@@ -947,6 +1371,9 @@ class QueryTab(QWidget):
 
         self._pending_commented_days = filters.commented_days
         self._last_jql = est.jql
+        # Committing a fetch clears the "filters changed" (dirty) state.
+        self._applied_filters = filters
+        self._refresh_chip_bar()
         self._run_fetch_worker(client, est.jql, self._on_fetched)
 
     def _run_fetch_worker(self, client, jql: str, on_finished) -> None:
@@ -1311,7 +1738,10 @@ class QueryTab(QWidget):
     # ================= saved views =================
     def _reload_views_combo(self) -> None:
         self.cmb_views.clear()
-        self.cmb_views.addItems(sorted(self.views.names()))
+        names = sorted(self.views.names())
+        self.cmb_views.addItems(names)
+        if hasattr(self, "btn_saved_views"):
+            self.btn_saved_views.setText(f"★ Saved views ({len(names)})")
 
     def _current_sort(self) -> tuple[str, bool]:
         header = self.table.horizontalHeader()
