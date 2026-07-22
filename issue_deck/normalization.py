@@ -10,9 +10,16 @@ from .models import JiraIssue
 
 
 def _name_of(v: Any) -> str:
-    """Resolve a Jira value that may be a nested dict, a scalar, or None."""
+    """Resolve a Jira value that may be a nested dict, a list, a scalar, or None.
+
+    Always returns a ``str``. A multi-value payload (e.g. a multi-select custom
+    field mapped to a scalar attribute like ``client``) arrives as a list;
+    resolve each element and join them so scalar string attributes stay strings.
+    """
     if isinstance(v, dict):
         return v.get("name") or v.get("displayName") or v.get("value") or ""
+    if isinstance(v, list):
+        return ", ".join(n for n in (_name_of(x) for x in v) if n)
     return v or ""
 
 

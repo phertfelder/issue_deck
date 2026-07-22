@@ -53,9 +53,16 @@ def _warn_color(label: str) -> str:
     return "#7f8c8d"
 
 
-def _text(value: str) -> str:
-    """Escape and preserve line breaks for embedding in the HTML view."""
-    return escape(value).replace("\n", "<br>")
+def _text(value: Any) -> str:
+    """Escape and preserve line breaks for embedding in the HTML view.
+
+    Coerces to ``str`` first so an unexpected non-string field value (e.g. a
+    multi-select payload that slipped into a scalar attribute) can never crash
+    the panel inside ``html.escape``.
+    """
+    if value is None:
+        return ""
+    return escape(str(value)).replace("\n", "<br>")
 
 
 def _render(issue: NormalizedIssue, field_names: dict[str, str]) -> str:

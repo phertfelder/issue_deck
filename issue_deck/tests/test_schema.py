@@ -189,6 +189,25 @@ def test_multi_select_custom_field(rich_issue, cloud_cfg):
     assert n.raw_field_values["customfield_10099"] == ["Web", "Mobile"]
 
 
+def test_multi_value_field_mapped_to_scalar_resolves_to_string():
+    """A multi-select field mapped to a *scalar* attribute must not stay a list.
+
+    Regression: a list leaking into ``client``/``severity`` later crashed the
+    detail panel inside ``html.escape`` when a Story was clicked in My Work.
+    """
+    cfg = AppConfig(base_url="https://example.atlassian.net",
+                    client_field="customfield_10050", severity_field="customfield_10060")
+    issue = {"key": "MS-1", "fields": {
+        "customfield_10050": [{"value": "Web"}, {"value": "Mobile"}],  # multi-select
+        "customfield_10060": [{"name": "S1"}],
+    }}
+    n = normalized_from_jira(issue, cfg)
+    assert n.client == "Web, Mobile"
+    assert isinstance(n.client, str)
+    assert n.severity == "S1"
+    assert isinstance(n.severity, str)
+
+
 # --------------------------------------------------------------------------- #
 # raw_field_values: mapped custom fields ONLY, never the full blob
 # --------------------------------------------------------------------------- #
